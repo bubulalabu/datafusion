@@ -2400,10 +2400,14 @@ dependencies = [
  "async-trait",
  "datafusion-catalog",
  "datafusion-common",
+ "datafusion-execution",
  "datafusion-expr",
+ "datafusion-physical-expr",
  "datafusion-physical-plan",
+ "futures",
  "parking_lot",
  "paste",
+ "tokio",
 ]
 
 [[package]]
