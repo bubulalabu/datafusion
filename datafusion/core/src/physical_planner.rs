@@ -516,7 +516,7 @@ impl DefaultPhysicalPlanner {
                 },
             ) => {
                 let batched_tf = session_state
-                    .batched_table_function(function_name.as_str())
+                    .resolve_batched_table_function(function_name.as_str())?
                     .ok_or_else(|| {
                         DataFusionError::Plan(format!(
                             "Batched table function '{function_name}' not found"
@@ -1570,7 +1570,7 @@ impl DefaultPhysicalPlanner {
                 let input_exec = children.one()?;
 
                 let batched_tf = session_state
-                    .batched_table_function(function_name.as_str())
+                    .resolve_batched_table_function(function_name.as_str())?
                     .ok_or_else(|| {
                         DataFusionError::Plan(format!(
                             "Batched table function '{function_name}' not found"

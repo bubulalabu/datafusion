@@ -121,10 +121,7 @@ impl SchemaProvider for MemorySchemaProvider {
         &self,
         name: &str,
     ) -> datafusion_common::Result<Option<Arc<BatchedTableFunction>>> {
-        Ok(self
-            .batched_table_functions
-            .remove(name)
-            .map(|(_, f)| f))
+        Ok(self.batched_table_functions.remove(name).map(|(_, f)| f))
     }
 
     fn batched_udtf_exist(&self, name: &str) -> bool {
@@ -178,7 +175,8 @@ mod tests {
         let schema = MemorySchemaProvider::new();
         let func = Arc::new(BatchedTableFunction::new(Arc::new(DummyBatchedTableFunc)));
 
-        let result = schema.register_batched_udtf("my_batched_func".to_string(), func.clone());
+        let result =
+            schema.register_batched_udtf("my_batched_func".to_string(), func.clone());
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
 
@@ -199,12 +197,10 @@ mod tests {
             .register_batched_udtf("my_batched_func".to_string(), func.clone())
             .unwrap();
 
-        let result = schema.register_batched_udtf("my_batched_func".to_string(), func.clone());
+        let result =
+            schema.register_batched_udtf("my_batched_func".to_string(), func.clone());
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("already exists"));
+        assert!(result.unwrap_err().to_string().contains("already exists"));
     }
 
     #[test]
