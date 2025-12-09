@@ -1892,7 +1892,19 @@ impl ContextProvider for SessionContextProvider<'_> {
     }
 
     fn is_batched_table_function(&self, name: &str) -> bool {
-        self.state.batched_table_function(name).is_some()
+        let table_ref = TableReference::parse_str(name);
+
+        // If qualified, look in schema
+        if table_ref.schema().is_some() {
+            let func_name = table_ref.table().to_string();
+            if let Ok(schema) = self.state.schema_for_ref(table_ref) {
+                return schema.batched_udtf_exist(&func_name);
+            }
+            false
+        } else {
+            // Unqualified: look in global registry
+            self.state.batched_table_function(name).is_some()
+        }
     }
 
     fn get_batched_table_function_source(
@@ -1902,17 +1914,34 @@ impl ContextProvider for SessionContextProvider<'_> {
     ) -> datafusion_common::Result<
         Option<Arc<dyn datafusion_expr::BatchedTableFunctionSource>>,
     > {
-        match self.state.batched_table_function(name) {
-            Some(tf) => {
-                use datafusion_catalog::default_table_source::DefaultBatchedTableFunctionSource;
-                let source = Arc::new(DefaultBatchedTableFunctionSource::new(
-                    Arc::clone(tf.inner()),
-                    arg_types.to_vec(),
-                ));
-                Ok(Some(source))
-            }
-            None => Ok(None),
-        }
+        let table_ref = TableReference::parse_str(name);
+
+        let batched_func = if table_ref.schema().is_some() {
+            // Qualified name: look in schema only
+            let func_name = table_ref.table().to_string();
+            let schema = self.state.schema_for_ref(table_ref)?;
+
+            schema.batched_udtf(&func_name)?.ok_or_else(|| {
+                plan_datafusion_err!(
+                    "Batched table function '{}' not found in schema",
+                    name
+                )
+            })?
+        } else {
+            // Unqualified: look in global registry only
+            self.state
+                .batched_table_function(name)
+                .ok_or_else(|| {
+                    plan_datafusion_err!("Batched table function '{name}' not found")
+                })?
+        };
+
+        use datafusion_catalog::default_table_source::DefaultBatchedTableFunctionSource;
+        let source = Arc::new(DefaultBatchedTableFunctionSource::new(
+            Arc::clone(batched_func.inner()),
+            arg_types.to_vec(),
+        ));
+        Ok(Some(source))
     }
 
     /// Create a new CTE work table for a recursive CTE logical plan

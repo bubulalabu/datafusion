@@ -27,7 +27,7 @@ use arrow::array::{Array, ArrayRef, AsArray, Int64Array, RecordBatch};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::prelude::*;
 use datafusion_catalog::batched_function::helpers::materialized_batch_stream;
-use datafusion_catalog::{BatchedTableFunction, BatchedTableFunctionImpl};
+use datafusion_catalog::{BatchedTableFunction, BatchedTableFunctionImpl, SchemaProvider};
 use datafusion_common::{exec_err, Result};
 use datafusion_execution::{SendableRecordBatchStream, TaskContext};
 use datafusion_expr::{Expr, Signature, Volatility};
@@ -512,6 +512,183 @@ async fn test_lateral_explicit_columns() -> Result<()> {
     assert_eq!(value_array.len(), 3);
     assert_eq!(value_array.value(0), 1);
     assert_eq!(doubled_array.value(0), 2);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_schema_scoped_batched_table_function() -> Result<()> {
+    use datafusion_catalog::MemorySchemaProvider;
+
+    let ctx = SessionContext::new();
+
+    // Get the existing public schema and downcast to MemorySchemaProvider
+    let catalog = ctx.catalog("datafusion").unwrap();
+    let schema = catalog.schema("public").unwrap();
+    let memory_schema = schema
+        .as_any()
+        .downcast_ref::<MemorySchemaProvider>()
+        .unwrap();
+
+    // Register batched table function in the schema
+    let double_fn = Arc::new(DoubleFn::new());
+    memory_schema.register_batched_udtf("schema_double".to_string(), Arc::new(BatchedTableFunction::new(double_fn)))?;
+
+    let schema = Arc::new(Schema::new(vec![Field::new(
+        "value",
+        DataType::Int64,
+        false,
+    )]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![Arc::new(Int64Array::from(vec![1, 2, 3]))],
+    )?;
+
+    ctx.register_batch("numbers", batch)?;
+
+    // Test using qualified name
+    let df = ctx
+        .sql("SELECT value, doubled FROM numbers CROSS JOIN LATERAL public.schema_double(numbers.value)")
+        .await?;
+
+    let results = df.collect().await?;
+
+    assert!(!results.is_empty());
+    assert_eq!(results[0].num_columns(), 2);
+
+    let value_array = results[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap();
+    let doubled_array = results[0]
+        .column(1)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap();
+
+    assert_eq!(value_array.len(), 3);
+    assert_eq!(value_array.value(0), 1);
+    assert_eq!(doubled_array.value(0), 2);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_schema_scoped_batched_table_function_standalone() -> Result<()> {
+    use datafusion_catalog::MemorySchemaProvider;
+
+    let ctx = SessionContext::new();
+
+    // Get the existing public schema and downcast to MemorySchemaProvider
+    let catalog = ctx.catalog("datafusion").unwrap();
+    let schema = catalog.schema("public").unwrap();
+    let memory_schema = schema
+        .as_any()
+        .downcast_ref::<MemorySchemaProvider>()
+        .unwrap();
+
+    // Register batched table function in the schema
+    let double_fn = Arc::new(DoubleFn::new());
+    memory_schema.register_batched_udtf("schema_double".to_string(), Arc::new(BatchedTableFunction::new(double_fn)))?;
+
+    // Test standalone usage with qualified name
+    let df = ctx.sql("SELECT * FROM public.schema_double(5)").await?;
+
+    let results = df.collect().await?;
+
+    assert!(!results.is_empty());
+    assert_eq!(results[0].num_columns(), 1);
+
+    let doubled_array = results[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap();
+
+    assert_eq!(doubled_array.len(), 1);
+    assert_eq!(doubled_array.value(0), 10);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_unqualified_batched_table_function_uses_global_registry() -> Result<()> {
+    let ctx = SessionContext::new();
+
+    // Register in global registry
+    {
+        let state_ref = ctx.state_ref();
+        let mut state = state_ref.write();
+        state.register_batched_table_function("global_double", Arc::new(DoubleFn::new()));
+    }
+
+    // Test using unqualified name (should use global registry)
+    let df = ctx.sql("SELECT * FROM global_double(7)").await?;
+
+    let results = df.collect().await?;
+
+    assert!(!results.is_empty());
+    let doubled_array = results[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap();
+
+    assert_eq!(doubled_array.value(0), 14);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_qualified_name_does_not_fallback_to_global() -> Result<()> {
+    let ctx = SessionContext::new();
+
+    // Register ONLY in global registry
+    {
+        let state_ref = ctx.state_ref();
+        let mut state = state_ref.write();
+        state.register_batched_table_function("global_only", Arc::new(DoubleFn::new()));
+    }
+
+    // Try to access with qualified name (should fail)
+    let result = ctx.sql("SELECT * FROM public.global_only(5)").await;
+
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("not found"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_schema_function_not_accessible_with_unqualified_name() -> Result<()> {
+    use datafusion_catalog::MemorySchemaProvider;
+
+    let ctx = SessionContext::new();
+
+    // Get the existing public schema and downcast to MemorySchemaProvider
+    let catalog = ctx.catalog("datafusion").unwrap();
+    let schema = catalog.schema("public").unwrap();
+    let memory_schema = schema
+        .as_any()
+        .downcast_ref::<MemorySchemaProvider>()
+        .unwrap();
+
+    // Register batched table function ONLY in schema (not in global registry)
+    let double_fn = Arc::new(DoubleFn::new());
+    memory_schema.register_batched_udtf("schema_only".to_string(), Arc::new(BatchedTableFunction::new(double_fn)))?;
+
+    // Try to access with unqualified name (should fail - no fallback to schema)
+    let result = ctx.sql("SELECT * FROM schema_only(5)").await;
+
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("not found"));
 
     Ok(())
 }
