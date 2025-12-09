@@ -47,8 +47,13 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
                 name, alias, args, ..
             } => {
                 if let Some(func_args) = args {
-                    let tbl_func_name =
-                        name.0.first().unwrap().as_ident().unwrap().to_string();
+                    // Support qualified names like schema.func
+                    let tbl_func_name = name
+                        .0
+                        .iter()
+                        .map(|ident| ident.as_ident().unwrap().to_string())
+                        .collect::<Vec<_>>()
+                        .join(".");
 
                     if self
                         .context_provider
@@ -296,10 +301,11 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
                 name, args, alias, ..
             } => {
                 let tbl_func_ref = self.object_name_to_table_reference(name)?;
-                let func_name = tbl_func_ref.table();
+                let qualified_name = tbl_func_ref.to_string(); // Get full qualified name
 
-                let is_batched =
-                    self.context_provider.is_batched_table_function(func_name);
+                let is_batched = self
+                    .context_provider
+                    .is_batched_table_function(&qualified_name);
 
                 if is_batched {
                     // Standalone batched table function
@@ -351,11 +357,11 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
 
                         let temp_source = self
                             .context_provider
-                            .get_batched_table_function_source(func_name, &arg_types)?
+                            .get_batched_table_function_source(&qualified_name, &arg_types)?
                             .ok_or_else(|| {
                                 plan_datafusion_err!(
                                     "Failed to get source for batched table function '{}'",
-                                    func_name
+                                    qualified_name
                                 )
                             })?;
 
@@ -371,7 +377,7 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
                         } else {
                             return plan_err!(
                                 "Batched table function '{}' does not support named arguments",
-                                func_name
+                                qualified_name
                             );
                         }
                     } else {
@@ -386,11 +392,11 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
 
                     let source = self
                         .context_provider
-                        .get_batched_table_function_source(func_name, &arg_types)?
+                        .get_batched_table_function_source(&qualified_name, &arg_types)?
                         .ok_or_else(|| {
                             plan_datafusion_err!(
                                 "Failed to get source for batched table function '{}'",
-                                func_name
+                                qualified_name
                             )
                         })?;
 
@@ -401,7 +407,7 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
                     let qualifier = alias
                         .as_ref()
                         .map(|a| self.ident_normalizer.normalize(a.name.clone()))
-                        .unwrap_or_else(|| format!("{func_name}()"));
+                        .unwrap_or_else(|| format!("{qualified_name}()"));
 
                     let qualified_func_schema =
                         DFSchema::try_from_qualified_schema(&qualifier, &func_schema)?;
@@ -409,7 +415,7 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
 
                     let plan = LogicalPlan::StandaloneBatchedTableFunction(
                         StandaloneBatchedTableFunction {
-                            function_name: func_name.to_string(),
+                            function_name: qualified_name.to_string(),
                             source,
                             args: resolved_args,
                             schema: Arc::clone(&qualified_func_schema),

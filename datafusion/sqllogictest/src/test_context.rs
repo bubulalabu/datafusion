@@ -30,8 +30,9 @@ use arrow::buffer::ScalarBuffer;
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef, TimeUnit, UnionFields};
 use arrow::record_batch::RecordBatch;
 use datafusion::catalog::{
-    batched_function::helpers::materialized_batch_stream, BatchedTableFunctionImpl,
-    CatalogProvider, MemoryCatalogProvider, MemorySchemaProvider, Session,
+    batched_function::helpers::materialized_batch_stream, BatchedTableFunction,
+    BatchedTableFunctionImpl, CatalogProvider, MemoryCatalogProvider,
+    MemorySchemaProvider, SchemaProvider, Session,
 };
 use datafusion::common::{not_impl_err, DataFusionError, Result};
 use datafusion::functions::math::abs;
@@ -155,6 +156,7 @@ impl TestContext {
                 );
                 drop(state);
                 register_multi_column_batched_function(test_ctx.session_ctx());
+                register_batched_functions_in_schema(test_ctx.session_ctx());
             }
             _ => {
                 info!("Using default SessionContext");
@@ -671,4 +673,42 @@ fn register_multi_column_batched_function(ctx: &SessionContext) {
         "batched_multi_column",
         Arc::new(MultiColumnBatchedFn::new()),
     );
+}
+
+fn register_batched_functions_in_schema(ctx: &SessionContext) {
+    // Get the public schema and register batched table functions in it
+    // This allows testing schema-scoped batched table functions
+    let catalog = ctx.catalog("datafusion").expect("datafusion catalog exists");
+    let schema = catalog.schema("public").expect("public schema exists");
+    let memory_schema = schema
+        .as_any()
+        .downcast_ref::<MemorySchemaProvider>()
+        .expect("public schema is MemorySchemaProvider");
+
+    // Get the batched table functions from the global registry
+    let (batched_generate_series, batched_multi_column) = {
+        let state_ref = ctx.state_ref();
+        let state = state_ref.read();
+        (
+            state.batched_table_function("batched_generate_series"),
+            state.batched_table_function("batched_multi_column"),
+        )
+    };
+
+    // Register them in the schema (after releasing the state lock)
+    if let Some(func) = batched_generate_series {
+        memory_schema
+            .register_batched_udtf("batched_generate_series".to_string(), func)
+            .expect("registration succeeds");
+        info!("Registered batched_generate_series in public schema");
+        assert!(memory_schema.batched_udtf_exist("batched_generate_series"));
+    }
+
+    if let Some(func) = batched_multi_column {
+        memory_schema
+            .register_batched_udtf("batched_multi_column".to_string(), func)
+            .expect("registration succeeds");
+        info!("Registered batched_multi_column in public schema");
+        assert!(memory_schema.batched_udtf_exist("batched_multi_column"));
+    }
 }

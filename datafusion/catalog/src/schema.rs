@@ -24,7 +24,7 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use crate::table::TableProvider;
+use crate::table::{BatchedTableFunction, TableProvider};
 use datafusion_common::Result;
 use datafusion_expr::TableType;
 
@@ -88,4 +88,44 @@ pub trait SchemaProvider: Debug + Sync + Send {
 
     /// Returns true if table exist in the schema provider, false otherwise.
     fn table_exist(&self, name: &str) -> bool;
+
+    /// Retrieves the list of available batched table function names in this schema.
+    fn batched_udtf_names(&self) -> Vec<String> {
+        vec![]
+    }
+
+    /// Retrieves a specific batched table function from the schema by name, if it exists,
+    /// otherwise returns `None`.
+    fn batched_udtf(&self, _name: &str) -> Result<Option<Arc<BatchedTableFunction>>> {
+        Ok(None)
+    }
+
+    /// If supported by the implementation, adds a new batched table function named `name` to
+    /// this schema.
+    ///
+    /// If a batched table function of the same name was already registered, returns "Batched table
+    /// function already exists" error.
+    fn register_batched_udtf(
+        &self,
+        _name: String,
+        _function: Arc<BatchedTableFunction>,
+    ) -> Result<Option<Arc<BatchedTableFunction>>> {
+        exec_err!("schema provider does not support registering batched table functions")
+    }
+
+    /// If supported by the implementation, removes the `name` batched table function from this
+    /// schema and returns the previously registered [`BatchedTableFunction`], if any.
+    ///
+    /// If no `name` batched table function exists, returns Ok(None).
+    fn deregister_batched_udtf(
+        &self,
+        _name: &str,
+    ) -> Result<Option<Arc<BatchedTableFunction>>> {
+        exec_err!("schema provider does not support deregistering batched table functions")
+    }
+
+    /// Returns true if batched table function exists in the schema provider, false otherwise.
+    fn batched_udtf_exist(&self, _name: &str) -> bool {
+        false
+    }
 }
