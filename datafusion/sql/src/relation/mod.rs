@@ -357,11 +357,11 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
 
                         let temp_source = self
                             .context_provider
-                            .get_batched_table_function_source(func_name, &arg_types)?
+                            .get_batched_table_function_source(&qualified_name, &arg_types)?
                             .ok_or_else(|| {
                                 plan_datafusion_err!(
                                     "Failed to get source for batched table function '{}'",
-                                    func_name
+                                    qualified_name
                                 )
                             })?;
 
@@ -377,7 +377,7 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
                         } else {
                             return plan_err!(
                                 "Batched table function '{}' does not support named arguments",
-                                func_name
+                                qualified_name
                             );
                         }
                     } else {
