@@ -240,9 +240,12 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
         };
 
         let tbl_func_ref = self.object_name_to_table_reference(name.clone())?;
-        let func_name = tbl_func_ref.table();
+        let qualified_name = tbl_func_ref.to_string(); // Get full qualified name
 
-        if !self.context_provider.is_batched_table_function(func_name) {
+        if !self
+            .context_provider
+            .is_batched_table_function(&qualified_name)
+        {
             return Ok(None);
         }
 
@@ -292,11 +295,11 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
 
             let temp_source = self
                 .context_provider
-                .get_batched_table_function_source(func_name, &arg_types)?
+                .get_batched_table_function_source(&qualified_name, &arg_types)?
                 .ok_or_else(|| {
                     datafusion_common::plan_datafusion_err!(
                         "Failed to get source for batched table function '{}'",
-                        func_name
+                        qualified_name
                     )
                 })?;
 
@@ -309,7 +312,7 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
             } else {
                 return plan_err!(
                     "Batched table function '{}' does not support named arguments",
-                    func_name
+                    qualified_name
                 );
             }
         } else {
@@ -324,11 +327,11 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
 
         let source = self
             .context_provider
-            .get_batched_table_function_source(func_name, &arg_types)?
+            .get_batched_table_function_source(&qualified_name, &arg_types)?
             .ok_or_else(|| {
                 datafusion_common::plan_datafusion_err!(
                     "Failed to get source for batched table function '{}'",
-                    func_name
+                    qualified_name
                 )
             })?;
 
@@ -339,7 +342,7 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
         let qualifier = alias
             .as_ref()
             .map(|a| self.ident_normalizer.normalize(a.name.clone()))
-            .unwrap_or_else(|| format!("{func_name}()"));
+            .unwrap_or_else(|| format!("{qualified_name}()"));
 
         let qualified_func_schema =
             datafusion_common::DFSchema::try_from_qualified_schema(
@@ -352,7 +355,7 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
         let lateral_plan =
             LogicalPlan::LateralBatchedTableFunction(LateralBatchedTableFunction {
                 input: Arc::new(input_plan.clone()),
-                function_name: func_name.to_string(),
+                function_name: qualified_name.to_string(),
                 source,
                 args: resolved_args,
                 schema: Arc::new(combined_schema),

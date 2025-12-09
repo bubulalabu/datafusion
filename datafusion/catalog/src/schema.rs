@@ -121,7 +121,9 @@ pub trait SchemaProvider: Debug + Sync + Send {
         &self,
         _name: &str,
     ) -> Result<Option<Arc<BatchedTableFunction>>> {
-        exec_err!("schema provider does not support deregistering batched table functions")
+        exec_err!(
+            "schema provider does not support deregistering batched table functions"
+        )
     }
 
     /// Returns true if batched table function exists in the schema provider, false otherwise.

@@ -929,6 +929,27 @@ impl SessionState {
         &self.batched_table_functions
     }
 
+    /// Resolve a batched table function by name, checking schemas for qualified names
+    /// and the global registry for unqualified names
+    pub fn resolve_batched_table_function(
+        &self,
+        name: &str,
+    ) -> datafusion_common::Result<Option<Arc<BatchedTableFunction>>> {
+        use crate::sql::TableReference;
+
+        let table_ref = TableReference::parse_str(name);
+
+        if table_ref.schema().is_some() {
+            // Qualified name - look in schema only
+            let func_name = table_ref.table().to_string();
+            let schema = self.schema_for_ref(table_ref)?;
+            schema.batched_udtf(&func_name)
+        } else {
+            // Unqualified name - look in global registry only
+            Ok(self.batched_table_functions.get(name).cloned())
+        }
+    }
+
     /// Store the logical plan and the parameter types of a prepared statement.
     pub(crate) fn store_prepared(
         &mut self,
@@ -1860,7 +1881,6 @@ impl ContextProvider for SessionContextProvider<'_> {
             // Qualified name: look in schema only
             let func_name = table_ref.table().to_string();
             let schema = self.state.schema_for_ref(table_ref)?;
-
             schema.batched_udtf(&func_name)?.ok_or_else(|| {
                 plan_datafusion_err!(
                     "Batched table function '{}' not found in schema",
@@ -1869,11 +1889,9 @@ impl ContextProvider for SessionContextProvider<'_> {
             })?
         } else {
             // Unqualified: look in global registry only
-            self.state
-                .batched_table_function(name)
-                .ok_or_else(|| {
-                    plan_datafusion_err!("Batched table function '{name}' not found")
-                })?
+            self.state.batched_table_function(name).ok_or_else(|| {
+                plan_datafusion_err!("Batched table function '{name}' not found")
+            })?
         };
 
         use datafusion_catalog::default_table_source::DefaultBatchedTableFunctionSource;

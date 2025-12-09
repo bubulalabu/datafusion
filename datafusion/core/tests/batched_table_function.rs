@@ -27,7 +27,9 @@ use arrow::array::{Array, ArrayRef, AsArray, Int64Array, RecordBatch};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::prelude::*;
 use datafusion_catalog::batched_function::helpers::materialized_batch_stream;
-use datafusion_catalog::{BatchedTableFunction, BatchedTableFunctionImpl, SchemaProvider};
+use datafusion_catalog::{
+    BatchedTableFunction, BatchedTableFunctionImpl, SchemaProvider,
+};
 use datafusion_common::{exec_err, Result};
 use datafusion_execution::{SendableRecordBatchStream, TaskContext};
 use datafusion_expr::{Expr, Signature, Volatility};
@@ -532,7 +534,10 @@ async fn test_schema_scoped_batched_table_function() -> Result<()> {
 
     // Register batched table function in the schema
     let double_fn = Arc::new(DoubleFn::new());
-    memory_schema.register_batched_udtf("schema_double".to_string(), Arc::new(BatchedTableFunction::new(double_fn)))?;
+    memory_schema.register_batched_udtf(
+        "schema_double".to_string(),
+        Arc::new(BatchedTableFunction::new(double_fn)),
+    )?;
 
     let schema = Arc::new(Schema::new(vec![Field::new(
         "value",
@@ -590,7 +595,10 @@ async fn test_schema_scoped_batched_table_function_standalone() -> Result<()> {
 
     // Register batched table function in the schema
     let double_fn = Arc::new(DoubleFn::new());
-    memory_schema.register_batched_udtf("schema_double".to_string(), Arc::new(BatchedTableFunction::new(double_fn)))?;
+    memory_schema.register_batched_udtf(
+        "schema_double".to_string(),
+        Arc::new(BatchedTableFunction::new(double_fn)),
+    )?;
 
     // Test standalone usage with qualified name
     let df = ctx.sql("SELECT * FROM public.schema_double(5)").await?;
@@ -655,10 +663,7 @@ async fn test_qualified_name_does_not_fallback_to_global() -> Result<()> {
     let result = ctx.sql("SELECT * FROM public.global_only(5)").await;
 
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("not found"));
+    assert!(result.unwrap_err().to_string().contains("not found"));
 
     Ok(())
 }
@@ -679,16 +684,16 @@ async fn test_schema_function_not_accessible_with_unqualified_name() -> Result<(
 
     // Register batched table function ONLY in schema (not in global registry)
     let double_fn = Arc::new(DoubleFn::new());
-    memory_schema.register_batched_udtf("schema_only".to_string(), Arc::new(BatchedTableFunction::new(double_fn)))?;
+    memory_schema.register_batched_udtf(
+        "schema_only".to_string(),
+        Arc::new(BatchedTableFunction::new(double_fn)),
+    )?;
 
     // Try to access with unqualified name (should fail - no fallback to schema)
     let result = ctx.sql("SELECT * FROM schema_only(5)").await;
 
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("not found"));
+    assert!(result.unwrap_err().to_string().contains("not found"));
 
     Ok(())
 }
