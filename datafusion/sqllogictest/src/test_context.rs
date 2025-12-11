@@ -23,8 +23,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use arrow::array::{
-    Array, ArrayRef, AsArray, BinaryArray, Float64Array, Int32Array, LargeBinaryArray,
-    LargeStringArray, StringArray, TimestampNanosecondArray, UnionArray,
+    Array, ArrayRef, AsArray, BinaryArray, Float64Array, Int32Array, Int64Array,
+    LargeBinaryArray, LargeStringArray, StringArray, TimestampNanosecondArray,
+    UnionArray,
 };
 use arrow::buffer::ScalarBuffer;
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef, TimeUnit, UnionFields};
@@ -546,7 +547,7 @@ fn register_multi_column_batched_function(ctx: &SessionContext) {
         fn new() -> Self {
             Self {
                 signature: Signature::exact(
-                    vec![DataType::Int32, DataType::Int32],
+                    vec![DataType::Int64, DataType::Int64],
                     Volatility::Immutable,
                 ),
             }
@@ -565,11 +566,11 @@ fn register_multi_column_batched_function(ctx: &SessionContext) {
 
         fn return_type(&self, _arg_types: &[DataType]) -> Result<Schema> {
             Ok(Schema::new(vec![
-                Field::new("n", DataType::Int32, false),
-                Field::new("n_squared", DataType::Int32, false),
-                Field::new("n_cubed", DataType::Int32, false),
-                Field::new("n_doubled", DataType::Int32, false),
-                Field::new("n_mod_3", DataType::Int32, false),
+                Field::new("n", DataType::Int64, false),
+                Field::new("n_squared", DataType::Int64, false),
+                Field::new("n_cubed", DataType::Int64, false),
+                Field::new("n_doubled", DataType::Int64, false),
+                Field::new("n_mod_3", DataType::Int64, false),
             ]))
         }
 
@@ -595,19 +596,19 @@ fn register_multi_column_batched_function(ctx: &SessionContext) {
                 ));
             }
 
-            let get_i32 = |arr: &dyn Array, idx: usize| -> Result<i32> {
+            let get_i64 = |arr: &dyn Array, idx: usize| -> Result<i64> {
                 if arr.is_null(idx) {
                     return Err(DataFusionError::Internal(
                         "NULL values not supported".to_string(),
                     ));
                 }
                 match arr.data_type() {
-                    DataType::Int32 => {
-                        Ok(arr.as_primitive::<arrow::datatypes::Int32Type>().value(idx))
+                    DataType::Int32 => Ok(arr
+                        .as_primitive::<arrow::datatypes::Int32Type>()
+                        .value(idx) as i64),
+                    DataType::Int64 => {
+                        Ok(arr.as_primitive::<arrow::datatypes::Int64Type>().value(idx))
                     }
-                    DataType::Int64 => Ok(arr
-                        .as_primitive::<arrow::datatypes::Int64Type>()
-                        .value(idx) as i32),
                     dt => Err(DataFusionError::Internal(format!(
                         "Expected Int32/Int64, got {dt:?}"
                     ))),
@@ -622,8 +623,8 @@ fn register_multi_column_batched_function(ctx: &SessionContext) {
             let mut input_row_indices = Vec::new();
 
             for row_idx in 0..start_array.len() {
-                let start = get_i32(start_array, row_idx)?;
-                let stop = get_i32(stop_array, row_idx)?;
+                let start = get_i64(start_array, row_idx)?;
+                let stop = get_i64(stop_array, row_idx)?;
 
                 for n in start..=stop {
                     n_values.push(n);
@@ -636,14 +637,14 @@ fn register_multi_column_batched_function(ctx: &SessionContext) {
             }
 
             // Build output batch with all columns or just projected columns
-            let schema = self.return_type(&[DataType::Int32, DataType::Int32])?;
+            let schema = self.return_type(&[DataType::Int64, DataType::Int64])?;
 
             let all_columns: Vec<ArrayRef> = vec![
-                Arc::new(Int32Array::from(n_values)),
-                Arc::new(Int32Array::from(n_squared_values)),
-                Arc::new(Int32Array::from(n_cubed_values)),
-                Arc::new(Int32Array::from(n_doubled_values)),
-                Arc::new(Int32Array::from(n_mod_3_values)),
+                Arc::new(Int64Array::from(n_values)),
+                Arc::new(Int64Array::from(n_squared_values)),
+                Arc::new(Int64Array::from(n_cubed_values)),
+                Arc::new(Int64Array::from(n_doubled_values)),
+                Arc::new(Int64Array::from(n_mod_3_values)),
             ];
 
             let (output_columns, output_schema) = if let Some(proj_indices) = projection {
