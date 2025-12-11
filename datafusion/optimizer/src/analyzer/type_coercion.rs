@@ -33,7 +33,6 @@ use datafusion_common::{
     plan_err, Column, DFSchema, DFSchemaRef, DataFusionError, Result, ScalarValue,
     TableReference,
 };
-use datafusion_expr::BatchedTableFunctionSource;
 use datafusion_expr::expr::{
     self, AggregateFunctionParams, Alias, Between, BinaryExpr, Case, Exists, InList,
     InSubquery, Like, ScalarFunction, Sort, WindowFunction,
@@ -50,6 +49,7 @@ use datafusion_expr::type_coercion::other::{
 };
 use datafusion_expr::type_coercion::{is_datetime, is_utf8_or_utf8view_or_large_utf8};
 use datafusion_expr::utils::merge_schema;
+use datafusion_expr::BatchedTableFunctionSource;
 use datafusion_expr::{
     is_false, is_not_false, is_not_true, is_not_unknown, is_true, is_unknown, not,
     AggregateUDF, Expr, ExprSchemable, Join, Limit, LogicalPlan, Operator, Projection,
