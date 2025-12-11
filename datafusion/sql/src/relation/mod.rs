@@ -390,41 +390,6 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
                         .map(|e| e.get_type(&schema))
                         .collect::<Result<Vec<_>>>()?;
 
-                        let temp_source = self
-                            .context_provider
-                            .get_batched_table_function_source(&qualified_name, &arg_types)?
-                            .ok_or_else(|| {
-                                plan_datafusion_err!(
-                                    "Failed to get source for batched table function '{}'",
-                                    qualified_name
-                                )
-                            })?;
-
-                        let sig_param_names =
-                            temp_source.signature().parameter_names.clone();
-
-                        if let Some(param_names) = sig_param_names.as_ref() {
-                            datafusion_expr::arguments::resolve_function_arguments(
-                                param_names,
-                                func_args,
-                                arg_names,
-                            )?
-                        } else {
-                            return plan_err!(
-                                "Batched table function '{}' does not support named arguments",
-                                qualified_name
-                            );
-                        }
-                    } else {
-                        func_args
-                    };
-
-                    // Now get arg types from resolved arguments
-                    let arg_types: Vec<arrow::datatypes::DataType> = resolved_args
-                        .iter()
-                        .map(|e| e.get_type(&schema))
-                        .collect::<Result<Vec<_>>>()?;
-
                     let source = self
                         .context_provider
                         .get_batched_table_function_source(&qualified_name, &arg_types)?
