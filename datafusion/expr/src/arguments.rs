@@ -104,9 +104,6 @@ fn reorder_named_arguments(
 
     let positional_count = arg_names.iter().filter(|n| n.is_none()).count();
 
-    // Capture args length before consuming the vector
-    let args_len = args.len();
-
     let expected_arg_count = param_names.len();
 
     if positional_count > expected_arg_count {
@@ -141,16 +138,17 @@ fn reorder_named_arguments(
         }
     }
 
-    // Only require parameters up to the number of arguments provided (supports optional parameters)
-    let required_count = args_len;
-    for i in 0..required_count {
-        if result[i].is_none() {
-            return plan_err!("Missing required parameter '{}'", param_names[i]);
-        }
-    }
+    // Find the highest parameter index that was provided (supports optional parameters with gaps)
+    let max_provided_index = result.iter().rposition(|p| p.is_some()).unwrap_or(0);
 
-    // Return only the assigned parameters (handles optional trailing parameters)
-    Ok(result.into_iter().take(required_count).flatten().collect())
+    // Convert None values to NULL expressions for missing optional parameters
+    let result_with_nulls: Vec<Expr> = result
+        .into_iter()
+        .take(max_provided_index + 1)
+        .map(|opt_expr| opt_expr.unwrap_or_else(|| Expr::Literal(datafusion_common::ScalarValue::Null, None)))
+        .collect();
+
+    Ok(result_with_nulls)
 }
 
 #[cfg(test)]
@@ -274,20 +272,20 @@ mod tests {
     }
 
     #[test]
-    fn test_missing_required_parameter() {
+    fn test_skip_middle_optional_parameter() {
         let param_names = vec!["a".to_string(), "b".to_string(), "c".to_string()];
 
-        // Call with: func(a => 1, c => 3.0) - missing 'b'
+        // Call with: func(a => 1, c => 3.0) - skips middle parameter 'b'
+        // This should now work - 'b' becomes NULL
         let args = vec![lit(1), lit(3.0)];
         let arg_names = vec![Some("a".to_string()), Some("c".to_string())];
 
-        let result = resolve_function_arguments(&param_names, args, arg_names);
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Missing required parameter")
-        );
+        let result = resolve_function_arguments(&param_names, args, arg_names).unwrap();
+
+        // Should return [a=1, b=NULL, c=3.0]
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], lit(1));
+        assert!(matches!(result[1], Expr::Literal(datafusion_common::ScalarValue::Null, None)));
+        assert_eq!(result[2], lit(3.0));
     }
 }
