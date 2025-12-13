@@ -16,7 +16,7 @@
 // under the License.
 
 use crate::planner::{ContextProvider, PlannerContext, SqlToRel};
-use datafusion_common::{not_impl_err, plan_datafusion_err, plan_err, Column, Result};
+use datafusion_common::{Column, Result, not_impl_err, plan_datafusion_err, plan_err};
 use datafusion_expr::{
     ExprSchemable, JoinType, LateralBatchedTableFunction, LogicalPlan, LogicalPlanBuilder,
 };

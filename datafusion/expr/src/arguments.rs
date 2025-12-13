@@ -145,7 +145,11 @@ fn reorder_named_arguments(
     let result_with_nulls: Vec<Expr> = result
         .into_iter()
         .take(max_provided_index + 1)
-        .map(|opt_expr| opt_expr.unwrap_or_else(|| Expr::Literal(datafusion_common::ScalarValue::Null, None)))
+        .map(|opt_expr| {
+            opt_expr.unwrap_or_else(|| {
+                Expr::Literal(datafusion_common::ScalarValue::Null, None)
+            })
+        })
         .collect();
 
     Ok(result_with_nulls)
@@ -285,7 +289,10 @@ mod tests {
         // Should return [a=1, b=NULL, c=3.0]
         assert_eq!(result.len(), 3);
         assert_eq!(result[0], lit(1));
-        assert!(matches!(result[1], Expr::Literal(datafusion_common::ScalarValue::Null, None)));
+        assert!(matches!(
+            result[1],
+            Expr::Literal(datafusion_common::ScalarValue::Null, None)
+        ));
         assert_eq!(result[2], lit(3.0));
     }
 }

@@ -50,7 +50,6 @@ use datafusion_expr::type_coercion::other::{
 };
 use datafusion_expr::type_coercion::{is_datetime, is_utf8_or_utf8view_or_large_utf8};
 use datafusion_expr::utils::merge_schema;
-use datafusion_expr::BatchedTableFunctionSource;
 use datafusion_expr::{
     AggregateUDF, Expr, ExprSchemable, Join, Limit, LogicalPlan, Operator, Projection,
     ScalarUDF, Union, WindowFrame, WindowFrameBound, WindowFrameUnits, is_false,
