@@ -678,7 +678,6 @@ fn register_multi_column_batched_function(ctx: &SessionContext) {
     );
 }
 
-<<<<<<< HEAD
 fn register_multi_column_no_projection_function(ctx: &SessionContext) {
     /// Multi-column batched table function that does NOT apply projection
     /// This demonstrates that DataFusion applies projection automatically
