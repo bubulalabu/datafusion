@@ -28,8 +28,8 @@ use datafusion_common::tree_node::{
     Transformed, TransformedResult, TreeNode, TreeNodeRecursion,
 };
 use datafusion_common::{
-    assert_eq_or_internal_err, assert_or_internal_err, internal_err, plan_err,
-    qualified_name, Column, DFSchema, Result,
+    Column, DFSchema, Result, assert_eq_or_internal_err, assert_or_internal_err,
+    internal_err, plan_err, qualified_name,
 };
 use datafusion_expr::expr::WindowFunction;
 use datafusion_expr::expr_rewriter::replace_col;
@@ -38,7 +38,7 @@ use datafusion_expr::utils::{
     conjunction, expr_to_columns, split_conjunction, split_conjunction_owned,
 };
 use datafusion_expr::{
-    and, or, BinaryExpr, Expr, Filter, Operator, Projection, TableProviderFilterPushDown,
+    BinaryExpr, Expr, Filter, Operator, Projection, TableProviderFilterPushDown, and, or,
 };
 
 use crate::optimizer::ApplyOrder;
@@ -1198,7 +1198,8 @@ impl OptimizerRule for PushDownFilter {
                     return internal_err!(
                         "Vec returned length: {} from supports_filters_pushdown is not the same size as the filters passed, which length is: {}",
                         supported_filters.len(),
-                        non_volatile_filters.len());
+                        non_volatile_filters.len()
+                    );
                 }
 
                 // Compose scan filters from non-volatile filters of `Exact` or `Inexact` pushdown type
@@ -1291,7 +1292,8 @@ impl OptimizerRule for PushDownFilter {
                     return internal_err!(
                         "Vec returned length: {} from supports_filters_pushdown is not the same size as the filters passed, which length is: {}",
                         supported_filters.len(),
-                        pushdown_candidates.len());
+                        pushdown_candidates.len()
+                    );
                 }
 
                 // Compose lateral filters from candidates of `Exact` or `Inexact` pushdown type
@@ -1591,17 +1593,17 @@ mod tests {
     use datafusion_expr::expr::{ScalarFunction, WindowFunction};
     use datafusion_expr::logical_plan::table_scan;
     use datafusion_expr::{
-        col, in_list, in_subquery, lit, ColumnarValue, ExprFunctionExt, Extension,
-        LogicalPlanBuilder, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature,
-        TableSource, TableType, UserDefinedLogicalNodeCore, Volatility,
-        WindowFunctionDefinition,
+        ColumnarValue, ExprFunctionExt, Extension, LogicalPlanBuilder,
+        ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, TableSource, TableType,
+        UserDefinedLogicalNodeCore, Volatility, WindowFunctionDefinition, col, in_list,
+        in_subquery, lit,
     };
 
+    use crate::OptimizerContext;
     use crate::assert_optimized_plan_eq_snapshot;
     use crate::optimizer::Optimizer;
     use crate::simplify_expressions::SimplifyExpressions;
     use crate::test::*;
-    use crate::OptimizerContext;
     use datafusion_expr::test::function_stub::sum;
     use insta::assert_snapshot;
 

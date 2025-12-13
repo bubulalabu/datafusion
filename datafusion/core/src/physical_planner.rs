@@ -94,7 +94,7 @@ use datafusion_physical_expr::expressions::Literal;
 use datafusion_physical_expr::{
     create_physical_sort_exprs, LexOrdering, PhysicalSortExpr,
 };
-use datafusion_physical_optimizer::{OptimizerContext, PhysicalOptimizerRule};
+use datafusion_physical_optimizer::PhysicalOptimizerRule;
 use datafusion_physical_plan::empty::EmptyExec;
 use datafusion_physical_plan::execution_plan::InvariantLevel;
 use datafusion_physical_plan::joins::PiecewiseMergeJoinExec;
@@ -506,9 +506,9 @@ impl DefaultPhysicalPlanner {
             LogicalPlan::StandaloneBatchedTableFunction(
                 StandaloneBatchedTableFunction {
                     function_name,
-                    source: _source,
+                    source,
                     args,
-                    schema,
+                    schema: _schema,
                     projection,
                     projected_schema,
                     filters,
@@ -530,7 +530,8 @@ impl DefaultPhysicalPlanner {
                     .map(|e| self.create_physical_expr(e, &empty_schema, session_state))
                     .collect::<Result<Vec<_>>>()?;
 
-                let full_function_schema = Arc::clone(schema.inner());
+                // Get full schema from source (not from logical plan which may be projected)
+                let full_function_schema = source.schema();
                 let projected_function_schema = Arc::clone(projected_schema.inner());
 
                 // All filters have been pre-filtered by the logical optimizer
@@ -1558,10 +1559,10 @@ impl DefaultPhysicalPlanner {
             LogicalPlan::LateralBatchedTableFunction(LateralBatchedTableFunction {
                 input,
                 function_name,
-                source: _source,
+                source,
                 args,
                 schema,
-                table_function_schema,
+                table_function_schema: _table_function_schema,
                 projection,
                 filters,
                 fetch,
@@ -1583,7 +1584,8 @@ impl DefaultPhysicalPlanner {
                     .collect::<Result<Vec<_>>>()?;
 
                 let combined_schema = Arc::clone(schema.inner());
-                let function_schema = Arc::clone(table_function_schema.inner());
+                // Get full schema from source (not from logical plan which may be projected)
+                let function_schema = source.schema();
 
                 // All filters have been pre-filtered by the logical optimizer
                 // based on supports_filters_pushdown(). Just pass them all through.
@@ -2384,14 +2386,11 @@ impl DefaultPhysicalPlanner {
         // to verify that the plan fulfills the base requirements.
         InvariantChecker(InvariantLevel::Always).check(&plan)?;
 
-        // Create optimizer context from session state
-        let optimizer_context = OptimizerContext::new(session_state.config().clone());
-
         let mut new_plan = Arc::clone(&plan);
         for optimizer in optimizers {
             let before_schema = new_plan.schema();
             new_plan = optimizer
-                .optimize_plan(new_plan, &optimizer_context)
+                .optimize(new_plan, session_state.config_options())
                 .map_err(|e| {
                     DataFusionError::Context(optimizer.name().to_string(), Box::new(e))
                 })?;

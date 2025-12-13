@@ -55,7 +55,7 @@ use datafusion_expr::execution_props::ExecutionProps;
 use datafusion_expr::expr_rewriter::FunctionRewrite;
 use datafusion_expr::planner::ExprPlanner;
 #[cfg(feature = "sql")]
-use datafusion_expr::planner::TypePlanner;
+use datafusion_expr::planner::{RelationPlanner, TypePlanner};
 use datafusion_expr::registry::{FunctionRegistry, SerializerRegistry};
 use datafusion_expr::simplify::SimplifyInfo;
 #[cfg(feature = "sql")]
@@ -141,6 +141,8 @@ pub struct SessionState {
     analyzer: Analyzer,
     /// Provides support for customizing the SQL planner, e.g. to add support for custom operators like `->>` or `?`
     expr_planners: Vec<Arc<dyn ExprPlanner>>,
+    #[cfg(feature = "sql")]
+    relation_planners: Vec<Arc<dyn RelationPlanner>>,
     /// Provides support for customizing the SQL type planning
     #[cfg(feature = "sql")]
     type_planner: Option<Arc<dyn TypePlanner>>,
@@ -213,6 +215,9 @@ impl Debug for SessionState {
             .field("function_factory", &self.function_factory)
             .field("cache_factory", &self.cache_factory)
             .field("expr_planners", &self.expr_planners);
+
+        #[cfg(feature = "sql")]
+        let ret = ret.field("relation_planners", &self.relation_planners);
 
         #[cfg(feature = "sql")]
         let ret = ret.field("type_planner", &self.type_planner);
@@ -350,6 +355,13 @@ impl SessionState {
         optimizer_rule: Arc<dyn OptimizerRule + Send + Sync>,
     ) {
         self.optimizer.rules.push(optimizer_rule);
+    }
+
+    /// Removes an optimizer rule by name, returning `true` if it existed.
+    pub(crate) fn remove_optimizer_rule(&mut self, name: &str) -> bool {
+        let original_len = self.optimizer.rules.len();
+        self.optimizer.rules.retain(|r| r.name() != name);
+        self.optimizer.rules.len() < original_len
     }
 
     /// Registers a [`FunctionFactory`] to handle `CREATE FUNCTION` statements
@@ -596,6 +608,24 @@ impl SessionState {
     /// Returns the [`ExprPlanner`]s for this session
     pub fn expr_planners(&self) -> &[Arc<dyn ExprPlanner>] {
         &self.expr_planners
+    }
+
+    #[cfg(feature = "sql")]
+    /// Returns the registered relation planners in priority order.
+    pub fn relation_planners(&self) -> &[Arc<dyn RelationPlanner>] {
+        &self.relation_planners
+    }
+
+    #[cfg(feature = "sql")]
+    /// Registers a [`RelationPlanner`] to customize SQL relation planning.
+    ///
+    /// Newly registered planners are given higher priority than existing ones.
+    pub fn register_relation_planner(
+        &mut self,
+        planner: Arc<dyn RelationPlanner>,
+    ) -> datafusion_common::Result<()> {
+        self.relation_planners.insert(0, planner);
+        Ok(())
     }
 
     /// Returns the [`QueryPlanner`] for this session
@@ -994,6 +1024,8 @@ pub struct SessionStateBuilder {
     analyzer: Option<Analyzer>,
     expr_planners: Option<Vec<Arc<dyn ExprPlanner>>>,
     #[cfg(feature = "sql")]
+    relation_planners: Option<Vec<Arc<dyn RelationPlanner>>>,
+    #[cfg(feature = "sql")]
     type_planner: Option<Arc<dyn TypePlanner>>,
     optimizer: Option<Optimizer>,
     physical_optimizers: Option<PhysicalOptimizer>,
@@ -1032,6 +1064,8 @@ impl SessionStateBuilder {
             session_id: None,
             analyzer: None,
             expr_planners: None,
+            #[cfg(feature = "sql")]
+            relation_planners: None,
             #[cfg(feature = "sql")]
             type_planner: None,
             optimizer: None,
@@ -1084,6 +1118,8 @@ impl SessionStateBuilder {
             session_id: None,
             analyzer: Some(existing.analyzer),
             expr_planners: Some(existing.expr_planners),
+            #[cfg(feature = "sql")]
+            relation_planners: Some(existing.relation_planners),
             #[cfg(feature = "sql")]
             type_planner: existing.type_planner,
             optimizer: Some(existing.optimizer),
@@ -1233,6 +1269,16 @@ impl SessionStateBuilder {
         expr_planners: Vec<Arc<dyn ExprPlanner>>,
     ) -> Self {
         self.expr_planners = Some(expr_planners);
+        self
+    }
+
+    #[cfg(feature = "sql")]
+    /// Sets the [`RelationPlanner`]s used to customize SQL relation planning.
+    pub fn with_relation_planners(
+        mut self,
+        relation_planners: Vec<Arc<dyn RelationPlanner>>,
+    ) -> Self {
+        self.relation_planners = Some(relation_planners);
         self
     }
 
@@ -1459,6 +1505,8 @@ impl SessionStateBuilder {
             analyzer,
             expr_planners,
             #[cfg(feature = "sql")]
+            relation_planners,
+            #[cfg(feature = "sql")]
             type_planner,
             optimizer,
             physical_optimizers,
@@ -1490,6 +1538,8 @@ impl SessionStateBuilder {
             session_id: session_id.unwrap_or_else(|| Uuid::new_v4().to_string()),
             analyzer: analyzer.unwrap_or_default(),
             expr_planners: expr_planners.unwrap_or_default(),
+            #[cfg(feature = "sql")]
+            relation_planners: relation_planners.unwrap_or_default(),
             #[cfg(feature = "sql")]
             type_planner,
             optimizer: optimizer.unwrap_or_default(),
@@ -1627,6 +1677,12 @@ impl SessionStateBuilder {
     /// Returns the current expr_planners value
     pub fn expr_planners(&mut self) -> &mut Option<Vec<Arc<dyn ExprPlanner>>> {
         &mut self.expr_planners
+    }
+
+    #[cfg(feature = "sql")]
+    /// Returns a mutable reference to the current [`RelationPlanner`] list.
+    pub fn relation_planners(&mut self) -> &mut Option<Vec<Arc<dyn RelationPlanner>>> {
+        &mut self.relation_planners
     }
 
     /// Returns the current type_planner value
@@ -1808,6 +1864,10 @@ struct SessionContextProvider<'a> {
 impl ContextProvider for SessionContextProvider<'_> {
     fn get_expr_planners(&self) -> &[Arc<dyn ExprPlanner>] {
         self.state.expr_planners()
+    }
+
+    fn get_relation_planners(&self) -> &[Arc<dyn RelationPlanner>] {
+        self.state.relation_planners()
     }
 
     fn get_type_planner(&self) -> Option<Arc<dyn TypePlanner>> {
